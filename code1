@@ -1,0 +1,315 @@
+#Importing Modules
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Setting environment to ignore future warnings
+import warnings
+warnings.simplefilter('ignore')
+
+# Setting pandas default values
+pd.options.display.max_rows = 50
+pd.options.display.max_columns = 50
+
+#Loading Data Files
+
+# Reading data
+df_train = pd.read_excel("DSC_2021_Training (1).xlsx", index_col=[0])
+df_test  = pd.read_excel("DSC_2021_Test.xlsx", index_col=[0])
+
+#Data Understanding
+
+# Function to perform all EDA
+def perform_eda(df, name=""):
+    # Printing basic detail of data like name, size, shape
+    print(f"EDA of {str(name)} Data....")
+    print(f"Size {df.size}")
+    print(f"Columns {df.shape[1]}")
+    print(f"Records {df.shape[0]}")
+    print("="*50)
+    
+    # Printing top 5 records of data
+    print("First Look of Data....")
+    display(df.head())
+    print("="*50)
+    
+    # Getting Numerical and Categorical columns Separately
+    cat_cols = df.select_dtypes(np.object).columns
+    num_cols = df.select_dtypes(np.number).columns
+
+    # Printing the Numerical columns
+    print(f"Number of Numerical features {len(num_cols)}")
+
+    # Printing the Categorical columns
+    print(f"Number of Catogircal features {len(cat_cols)}")
+    
+    # Printing info of data like data type, non null values
+    print("="*50)
+    print("Information of Data....")
+    print(df.info())
+    print("="*50)
+    
+    # Displaying statistical properties of data like mean, median, max, min
+    print("Statistical Properties of Data....")
+    display(df.describe(include="all"))
+    print("="*50)
+    
+perform_eda(df_train, "Training")
+
+perform_eda(df_test, "Testing")
+
+# Percentage on bar
+def per_on_bar(feature, title=""):
+    print("Total unique values are: ", len(feature.value_counts()), "\n\n")
+    print("Category\tValue\n")
+    data = feature.value_counts()
+    print(data)
+    categories_num = len(data)
+    #plotting bar-plot and pie chart
+    sns.set_style('darkgrid')
+    plt.figure(figsize=(16,5))
+    plt.title(title, fontsize=16)
+    plt.xticks(rotation=45)
+    plot = sns.barplot(x=data.index, y=data.values, edgecolor="black", palette=sns.palettes.color_palette("icefire"))
+    total = len(feature)
+    for p in plot.patches:
+        percentage = '{:.1f}%'.format(100 * p.get_height()/total)
+        x = p.get_x() + p.get_width() / 2 - 0.08
+        y = p.get_y() + p.get_height()
+        plot.annotate(percentage, (x, y), size = 12)
+    plt.show()
+    
+per_on_bar(df_train.Label_Default)
+
+# Function to explore continous features
+def explore_feature(feature_name, target_name="Exited", target_value='Y', df=df_train):
+    temp = df[[feature_name, target_name]]
+    temp = df[df[feature_name] > df[feature_name].mean()]
+    ratio = len(temp[temp[target_name] == "Y"])/len(temp)
+    print(f"Ratio of Shark Appearance if {str(feature_name).upper()} is more than average value : {ratio}")
+    temp = df[df[feature_name] < df[feature_name].mean()]
+    ratio = len(temp[temp[target_name] == "Y"])/len(temp)
+    print(f"Ratio of Shark Appearance if {str(feature_name).upper()} is less than average value : {ratio}")
+
+for i in df_train.select_dtypes(np.number).columns:
+    print("="*120)
+    explore_feature(i, "Label_Default")
+    
+#DATA PREPERATION
+
+# Dropping Unnecessary features
+df_train.drop(["Managing_Sales_Office_Nbr", "Postal_Code_L", "Product_Desc"], axis=1, inplace=True)
+df_test.drop(["Managing_Sales_Office_Nbr", "Postal_Code_L", "Product_Desc"], axis=1, inplace=True)
+
+# lets try to check the percentage of missing values,unique values,percentage of one catagory values and type against each column.
+def statistics(df):
+    stats = []
+    # Iterating all columns
+    for col in df.columns:
+        # Calculating different details and storing it into list
+        stats.append((col, df[col].nunique(), df[col].isnull().sum(), df[col].isnull().sum() * 100 / df.shape[0], df[col].dtype))
+
+    # Converting list into table
+    stats_df = pd.DataFrame(stats, columns=['Feature', 'Unique_values', 'Missing values', 'Percentage of Missing Values', 'Data Type'])
+    # Setting column name as index
+    stats_df.set_index('Feature', drop=True, inplace=True)
+    # Droping features in which no NAN  is present
+    stats_df.drop(stats_df[stats_df['Missing values'] == 0].index, axis=0, inplace=True)
+    # Sorting table according to number of NAN
+    stats_df.sort_values('Percentage of Missing Values', ascending=False, inplace=True)
+    return stats_df
+
+stat = statistics(df_train)
+stat
+
+# Finding columns in which more than 50% values are null
+cols = stat[stat["Percentage of Missing Values"] > 50].index.to_list()
+
+print(f"Columns with more than 50% of Null values are\n {cols}")
+
+# Dropping columns
+df_train.drop(cols, axis=1, inplace=True)
+df_test.drop(cols, axis=1, inplace=True)
+
+from scipy.stats import normaltest
+
+num_cols = df_train.select_dtypes(np.number).columns
+
+# Iterating Numerical columns
+for i in num_cols:
+    # Finding Normality of feature
+    st, p = normaltest(df_train[i].dropna())
+    
+    # Checking if normal or not
+    if p > 0.05:
+        # Filling with mean if normal
+        df_train[i].fillna(df_train[i].mean(), inplace=True)
+        df_test[i].fillna(df_test[i].mean(), inplace=True)
+    else:
+        # Filling with median if not normal
+        df_train[i].fillna(df_train[i].median(), inplace=True)
+        df_test[i].fillna(df_test[i].median(), inplace=True)
+        
+statistics(df_train)
+
+# Creating a copy of data
+df_n = df_train.copy()
+
+# Iterating each column
+for x in num_cols:
+    # Calculating percentiles & interquartile range
+    q75,q25 = np.percentile(df_train.loc[:,x],[95,15])
+    intr_qr = q75-q25
+ 
+    # Getting max and min value
+    max = q75+(1.5*intr_qr)
+    min = q25-(1.5*intr_qr)
+ 
+    # Marking values as outlier if they are not in range
+    df_n.loc[df_train[x] < min,x] = np.nan
+    df_n.loc[df_train[x] > max,x] = np.nan
+
+# lets try to check the sum of count of NULL values/outliers in each column of the dataset
+temp = df_n.isnull().sum()
+print(temp)
+
+# Dropping outliers
+df_train = df_n.dropna(axis = 0)
+
+# Encoding Feature
+from sklearn.preprocessing import LabelEncoder
+encoder = LabelEncoder()
+
+for i in df_train.select_dtypes("O").columns.to_list()[:-1]:
+    encoder.fit(df_train[i])
+    df_train[i] = encoder.transform(df_train[i])
+    df_test[i] = encoder.transform(df_test[i])  
+    
+# Scaling faetures
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+
+scaler.fit(df_train[num_cols])
+df_train[num_cols] = scaler.transform(df_train[num_cols])
+df_test[num_cols] = scaler.transform(df_test[num_cols])
+
+# Spliting data into input and output
+x_tr = df_train.drop("Label_Default", axis=1)
+y_tr = df_train.Label_Default
+
+x_ts = df_test.drop("Label_Default", axis=1)
+
+y_tr = y_tr.map({"Y": 1, "N": 0})
+
+# Balancing data
+from imblearn.over_sampling import SMOTE
+sampler = SMOTE()
+x_tr, y_tr = sampler.fit_resample(x_tr, y_tr)
+
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(x_tr, y_tr, test_size=0.25)
+
+#MODELING
+
+# Importing Models
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+
+# Importing Evaluation matrces
+from sklearn.metrics import accuracy_score,precision_score,recall_score,f1_score,confusion_matrix,classification_report, plot_confusion_matrix, roc_auc_score
+
+# check the performance on diffrent regressor
+models = []
+models.append(('LogisitcRegression', LogisticRegression()))
+models.append(('KNeighborsClassifier', KNeighborsClassifier()))
+models.append(('RandomForestClassifier', RandomForestClassifier()))
+models.append(('DecisionTreeClassifier', DecisionTreeClassifier()))
+
+
+# metrices to store performance
+acc = []
+pre = []
+f1 = []
+con = []
+rec = []
+roc = []
+
+
+import time
+i = 0
+for name,model in models:
+    i = i+1
+    start_time = time.time()
+    
+    # Fitting model to the Training set
+    clf = model
+    clf.fit(X_train, y_train)
+    
+    # predict values
+    y_pred = clf.predict(X_test)
+    
+    # Accuracy
+    accuracy = accuracy_score(y_test, y_pred)
+    acc.append(accuracy)
+    # Precision
+    precision = precision_score(y_test, y_pred, average=None)
+    pre.append(precision)
+    # Recall
+    recall = recall_score(y_test, y_pred, average=None)
+    rec.append(recall)
+    # F1 Score
+    f1_sco = f1_score(y_test, y_pred, average=None)
+    f1.append(f1_sco)
+    # Confusion Matrix
+    confusion_mat = confusion_matrix(y_test, y_pred)
+    con.append(confusion_mat)
+    # AUC Score
+    roc_sc = roc_auc_score(y_test, y_pred)
+    roc.append(roc_sc)
+    # Report
+    report = classification_report(y_test, y_pred)
+
+
+    print("+","="*100,"+")
+    print('\033[1m' + f"\t\t\t{i}-For {name} The Performance result is: " + '\033[0m')
+    print("+","="*100,"+")
+    print('Accuracy : ', accuracy)   
+    print("-"*50)
+    print('F1 : ', f1_sco)
+    print("-"*50)
+    print('Reacll : ', recall)
+    print("-"*50)
+    print('Precision : ', precision)
+    print("-"*50)
+    print('AUC Score : ', roc_sc)
+    print("-"*50)
+    print('Confusion Matrix....\n', confusion_mat)
+    print("-"*50)
+    print('Classification Report....\n', report)
+    print("-"*50)
+    print('Plotting Confusion Matrix...\n')
+    plot_confusion_matrix(clf, X_test, y_test)
+    plt.show()
+
+
+    
+    print("\t\t\t\t\t\t\t-----------------------------------------------------------")
+    print(f"\t\t\t\t\t\t\t Time for detection ({name}) : {round((time.time() - start_time), 3)} seconds...")
+    print("\t\t\t\t\t\t\t-----------------------------------------------------------")
+    print()
+    
+comp = pd.DataFrame({"Model": dict(models).keys(), "Accuracy": acc, "AUC": roc, "Precision": pre, "Recall": rec, "F1_Score": f1, "Confusion Matrix": con})
+comp
+
+df_pred = pd.read_excel("DSC_2021_probability_scores copy.xlsx")
+df_pred
+
+y_pred = model.predict_proba(x_ts)
+
+df_pred["CLASS = 1 (DEFAULT)"] = y_pred[:, 1]
+
+df_pred.to_csv("predictions.csv")
